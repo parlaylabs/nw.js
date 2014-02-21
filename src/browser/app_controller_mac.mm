@@ -1,16 +1,16 @@
 // Copyright (c) 2012 Intel Corp
 // Copyright (c) 2012 The Chromium Authors
-// 
-// Permission is hereby granted, free of charge, to any person obtaining a copy 
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 //  in the Software without restriction, including without limitation the rights
 //  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell co
 // pies of the Software, and to permit persons to whom the Software is furnished
 //  to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in al
 // l copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IM
 // PLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNES
 // S FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
@@ -30,6 +30,8 @@
 #include "base/values.h"
 
 @implementation AppController
+
+@synthesize appReady;
 
 - (BOOL)application:(NSApplication*)sender
            openFile:(NSString*)filename {
@@ -52,9 +54,18 @@
   return FALSE;
 }
 
+- (void) applicationWillFinishLaunching: (NSNotification *) note {
+	self.appReady = FALSE;
+	NSAppleEventManager *eventManager = [NSAppleEventManager sharedAppleEventManager];
+	[eventManager setEventHandler:self
+					  andSelector:@selector(handleGetURLEvent:withReplyEvent:)
+					forEventClass:kInternetEventClass
+					   andEventID:kAEGetURL];
+}
+
 - (void) applicationDidFinishLaunching: (NSNotification *) note {
   // Initlialize everything here
-  content::ShellContentBrowserClient* browser_client = 
+  content::ShellContentBrowserClient* browser_client =
       static_cast<content::ShellContentBrowserClient*>(
           content::GetContentClient()->browser());
   browser_client->shell_browser_main_parts()->Init();
@@ -74,6 +85,9 @@
     standard_menus.BuildEditMenu();
   standard_menus.BuildWindowMenu();
 #endif
+
+	self.appReady = TRUE;
+
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)theApplication
@@ -90,6 +104,22 @@
   // reply
   nwapi::App::CloseAllWindows(false, true);
   return NSTerminateCancel;
+}
+
+- (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent
+{
+	NSString *urlString = [[event paramDescriptorForKeyword:keyDirectObject] stringValue];
+	if (self.appReady) {
+		// Immediate handle of get url event
+		nwapi::App::EmitOpenEvent([urlString UTF8String]);
+	} else {
+		// App is not ready yet, add the URL to the command line arguments.
+		// This happens when the app is started by opening a link with the registered URL.
+		if (content::Shell::windows().size() == 0) {
+			CommandLine::ForCurrentProcess()->AppendArg([urlString UTF8String]);
+			CommandLine::ForCurrentProcess()->FixOrigArgv4Finder([urlString UTF8String]);
+		}
+	}
 }
 
 @end
